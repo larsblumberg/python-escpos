@@ -314,6 +314,15 @@ class Escpos(object, metaclass=ABCMeta):
             outp.append(ESC + b"2")  # Reset line-feed size
             self._raw(b"".join(outp))
 
+        # Some printers (confirmed: NT-5890K) reset their active code page back
+        # to the factory default after processing image data (GS v 0 / GS ( L /
+        # ESC *). MagicEncode is unaware of this hardware-side reset and will not
+        # re-emit a CODEPAGE_CHANGE command for subsequent text, causing non-ASCII
+        # characters to be misinterpreted by the printer. Invalidating the cached
+        # encoding here forces the next text() call to re-emit the CODEPAGE_CHANGE
+        # command regardless of what was previously thought to be active.
+        self.magic.encoding = None
+
     def _image_send_graphics_data(self, m, fn, data) -> None:
         """Calculate and send correct data length for `GS ( L`.
 
@@ -1335,6 +1344,11 @@ class Escpos(object, metaclass=ABCMeta):
         """
         if hw.upper() == "INIT":
             self._raw(HW_INIT)
+            # ESC @ is a full printer reset — it unconditionally restores all
+            # settings to factory defaults, including the active code page.
+            # Invalidate the cached encoding so the next text() call re-emits
+            # the CODEPAGE_CHANGE command rather than silently sending the wrong bytes.
+            self.magic.encoding = None
         elif hw.upper() == "SELECT":
             self._raw(HW_SELECT)
         elif hw.upper() == "RESET":
